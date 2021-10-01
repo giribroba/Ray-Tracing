@@ -4,20 +4,17 @@ using UnityEngine;
 public class EyeScript : MonoBehaviour
 {
     [SerializeField] private Vector2 resolution;
-    [SerializeField] private LayerMask dontRender, lightSourceLayer;
+    [SerializeField] private LayerMask dontRenderAndLights, dontRender;
     [SerializeField] private Transform imagePlaneTransform;
     [SerializeField] private GameObject lightSource;
-    [SerializeField] private float visionLimit;
+    [SerializeField] private bool showRays;
+    [SerializeField] private float visionLimit, shadowRayOffset;
     private Texture2D finalTexture;
-    private RaycastHit[,] primaryRays, shadowRays;
-    //private Color[,] texColor;
+    private RaycastHit primaryRays, shadowRays;
 
     private void Awake()
     {
         finalTexture = new Texture2D((int)resolution.x, (int)resolution.y);
-        primaryRays = new RaycastHit[(int)resolution.x, (int)resolution.y];
-        shadowRays = new RaycastHit[(int)resolution.x, (int)resolution.y];
-        //texColor = new Color[(int)resolution.x, (int)resolution.y];
 
         Console.WriteLine("asd");
     }
@@ -29,26 +26,24 @@ public class EyeScript : MonoBehaviour
             for (int j = 0; j < resolution.y; j++)
             {
                 Vector3 pos = CalculatePixelPos(i, j) - this.transform.position;
-                Physics.Raycast(this.transform.position, pos, out primaryRays[i, j], visionLimit, ~dontRender);
+                Physics.Raycast(this.transform.position, pos, out primaryRays, visionLimit, ~dontRenderAndLights);
 
-                if (primaryRays[i, j].transform != null)
+                if (primaryRays.transform != null)
                 {
-                    var pixelPosInTexture = primaryRays[i, j].textureCoord;
-                    var renderer = primaryRays[i, j].transform.gameObject.GetComponent<Renderer>();
+                    var pixelPosInTexture = primaryRays.textureCoord;
+                    var renderer = primaryRays.transform.gameObject.GetComponent<Renderer>();
                     var texture = (Texture2D)renderer.material.mainTexture;
-                    var color = renderer.material.GetColor("_Color") * CalculateShadowRays(i, j, primaryRays[i, j].point);
+                    var color = renderer.material.GetColor("_Color") * CalculateShadowRays(i, j, primaryRays.point - shadowRayOffset * this.transform.forward);
                     var tiling = renderer.material.mainTextureScale;
 
                     Color textColor;
 
                     pixelPosInTexture.x *= texture.width;
                     pixelPosInTexture.y *= texture.height;
-                    //Debug.DrawRay(primaryRays[i, j].point, lightSourceTransform.position - primaryRays[i, j].point, Color.yellow);
 
 
                     if (texture == null)
                         finalTexture.SetPixel(i, j, color);
-                    //texColor[i, j] = color;
                     else
                     {
                         textColor = texture.GetPixel(Mathf.FloorToInt(pixelPosInTexture.x * tiling.x), Mathf.FloorToInt(pixelPosInTexture.y * tiling.y)) * color;
@@ -57,8 +52,6 @@ public class EyeScript : MonoBehaviour
                 }
                 else
                     finalTexture.SetPixel(i, j, Color.black);
-                //texColor[i, j] = Color.cyan;
-
                 //Debug.DrawRay(this.transform.position, pos, Color.green);
             }
         }
@@ -77,20 +70,22 @@ public class EyeScript : MonoBehaviour
 
     float CalculateShadowRays(int x, int y, Vector3 hitPos)
     {
-        Physics.Raycast(hitPos, lightSource.transform.position - hitPos, out shadowRays[x, y], visionLimit, ~lightSourceLayer);
+        Physics.Raycast(hitPos, lightSource.transform.position - hitPos, out shadowRays, visionLimit, ~dontRender);
 
-        //Debug.DrawRay(hitPos, lightSourceTransform.position - hitPos, Color.yellow);
-        if (shadowRays[x, y].transform == lightSource.transform && shadowRays[x, y].transform)
+        if (shadowRays.transform == lightSource.transform && shadowRays.transform)
         {
-            Debug.DrawRay(hitPos, lightSource.transform.position - hitPos, Color.yellow);
+#if UNITY_EDITOR
+            if (showRays)
+            {
+                Debug.DrawRay(primaryRays.point, this.transform.position - primaryRays.point, Color.green);
+                Debug.DrawRay(hitPos, lightSource.transform.position - hitPos, Color.yellow);
+            }
+#endif
             return visionLimit * lightSource.GetComponent<LightSource>().intensity - Vector3.Distance(hitPos, lightSource.transform.position) * Vector3.Distance(hitPos, lightSource.transform.position) / visionLimit;
         }
         else
-            return visionLimit * lightSource.GetComponent<LightSource>().intensity - Vector3.Distance(hitPos, lightSource.transform.position) * Vector3.Distance(hitPos, lightSource.transform.position) / visionLimit;
+            return 0;
     }
 
-    Vector3 CalculatePixelPos(float x, float y)
-    {
-        return new Vector3((x - (resolution.x / 2 - 0.5f)) * (imagePlaneTransform.localScale.x * 10 / resolution.x), ((resolution.y / 2 - 0.5f) - y) * (imagePlaneTransform.localScale.z * 10 / resolution.y), 0) + imagePlaneTransform.position;
-    }
+    Vector3 CalculatePixelPos(float x, float y) => new Vector3((x - (resolution.x / 2 - 0.5f)) * (imagePlaneTransform.localScale.x * 10 / resolution.x), ((resolution.y / 2 - 0.5f) - y) * (imagePlaneTransform.localScale.z * 10 / resolution.y), 0) + imagePlaneTransform.position;
 }
